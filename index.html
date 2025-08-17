@@ -500,8 +500,7 @@
       });
     }
     const headers=['date','exercise','best1RM','exerciseNote','kg','reps','rir','oneRM','setNote'];
-    const lines=[headers.join(',')].concat(rows.map(r=>headers.map(h=>('"'+String(r[h]||'').replaceAll('"','""')+'"')).join(','))).join('
-');
+    const lines=[headers.join(',')].concat(rows.map(r=>headers.map(h=>('"'+String(r[h]||'').replaceAll('"','""')+'"')).join(','))).join('\n');
     const blob=new Blob([lines],{type:'text/csv'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='workouts.csv'; a.click(); URL.revokeObjectURL(a.href);
   }
