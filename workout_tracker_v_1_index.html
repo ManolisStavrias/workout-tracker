@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workout Tracker</title>
+  <meta name="theme-color" content="#0ea5e9" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    input, select, button { font-size: 16px; }
+    textarea { font-size: 15px; }
+    /* Simple toast */
+    #toast { position: fixed; right: 16px; bottom: 24px; z-index: 50; display: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-3xl mx-auto p-4 pb-32">
+    <header class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold">Workout Tracker</h1>
+      <div id="saveStatus" class="text-sm text-slate-500"> </div>
+    </header>
+
+    <nav class="grid grid-cols-3 gap-2 mb-4">
+      <button id="tab-log" class="tab-btn px-3 py-2 rounded-2xl shadow-sm bg-white border border-slate-200">Log</button>
+      <button id="tab-exercises" class="tab-btn px-3 py-2 rounded-2xl shadow-sm bg-white border border-slate-200">Exercise Manager</button>
+      <button id="tab-settings" class="tab-btn px-3 py-2 rounded-2xl shadow-sm bg-white border border-slate-200">Settings</button>
+    </nav>
+
+    <!-- Screen: Log -->
+    <section id="screen-log" class="screen">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <label class="text-sm font-medium" for="dateInput">Date</label>
+        <input id="dateInput" type="date" class="px-3 py-2 rounded-xl border border-slate-300 bg-white shadow-sm"/>
+        <button id="copyPrevBtn" class="px-3 py-2 rounded-xl bg-indigo-500 text-white shadow hover:bg-indigo-600">Copy Previous</button>
+        <button id="addExerciseBtn" class="ml-auto px-3 py-2 rounded-xl bg-sky-500 text-white shadow hover:bg-sky-600">Add Exercise</button>
+        <button id="exportCsvBtn" class="px-3 py-2 rounded-xl bg-emerald-500 text-white shadow hover:bg-emerald-600">Export CSV</button>
+      </div>
+
+      <div id="exerciseContainer" class="space-y-4"></div>
+
+      <p class="mt-4 text-xs text-slate-500">Tip: your data saves automatically to this device. Use Export CSV for a backup or to open in Excel/Sheets.</p>
+    </section>
+
+    <!-- Screen: Exercises -->
+    <section id="screen-exercises" class="screen hidden">
+      <div class="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 mb-4">
+        <h2 class="text-lg font-semibold mb-3">Add Exercise</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          <input id="exName" type="text" placeholder="Name (e.g., Bench Press)" class="col-span-2 px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
+          <input id="exMuscle" list="muscleOptions" type="text" placeholder="Muscle Group" class="px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
+          <input id="exMovement" list="movementOptions" type="text" placeholder="Movement" class="px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
+          <button id="addExerciseListBtn" class="px-3 py-2 rounded-xl bg-sky-500 text-white shadow hover:bg-sky-600">Add</button>
+        </div>
+        <datalist id="muscleOptions"></datalist>
+        <datalist id="movementOptions"></datalist>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
+        <h2 class="text-lg font-semibold mb-3">Exercises (with stored 1RM)</h2>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-slate-600">
+                <th class="py-2 pr-2">Name</th>
+                <th class="py-2 pr-2">Muscle</th>
+                <th class="py-2 pr-2">Movement</th>
+                <th class="py-2 pr-2">Best 1RM</th>
+                <th class="py-2 pr-2 text-right"> </th>
+              </tr>
+            </thead>
+            <tbody id="exerciseList"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: Settings -->
+    <section id="screen-settings" class="screen hidden">
+      <div class="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 space-y-3">
+        <h2 class="text-lg font-semibold">Data & Reset</h2>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <button id="clearWorkoutsBtn" class="px-3 py-2 rounded-xl bg-amber-500 text-white shadow hover:bg-amber-600">Clear Workouts</button>
+          <button id="resetExercisesBtn" class="px-3 py-2 rounded-xl bg-rose-500 text-white shadow hover:bg-rose-600">Reset Exercises</button>
+          <button id="clearAllBtn" class="px-3 py-2 rounded-xl bg-red-600 text-white shadow hover:bg-red-700 sm:col-span-2">Clear EVERYTHING</button>
+        </div>
+        <div class="mt-4 rounded-lg bg-white border p-3">
+          <h3 class="font-semibold">1RM Auto-Update Settings</h3>
+          <p class="text-xs text-slate-500">These are the conservative defaults. We can expose sliders later.</p>
+          <ul class="text-sm mt-2">
+            <li>Strategy: <strong>Upper-bound</strong> (only update when you achieve planned upper reps)</li>
+            <li>Min increase to register: <strong>0.5%</strong></li>
+            <li>Require low RIR to auto-update: <strong>yes (≤1)</strong></li>
+            <li>Weight rounding step: <strong>2.5 kg</strong></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Exercise block template -->
+  <template id="exerciseTemplate">
+    <div class="exercise-block space-y-2 rounded-2xl bg-white border border-slate-200 shadow-sm p-3">
+      <div class="flex flex-wrap gap-2 items-center">
+        <select class="filterBy px-2 py-1 border rounded-xl">
+          <option value="muscle">Muscle</option>
+          <option value="movement">Movement</option>
+        </select>
+        <select class="category px-2 py-1 border rounded-xl"></select>
+        <select class="exercise px-2 py-1 border rounded-xl"></select>
+
+        <div class="flex items-center gap-2">
+          <input class="plannedMin w-16 px-2 py-1 border rounded-xl" type="number" placeholder="min" title="Planned min reps" />
+          <span class="text-sm">-</span>
+          <input class="plannedMax w-16 px-2 py-1 border rounded-xl" type="number" placeholder="max" title="Planned max reps" />
+        </div>
+
+        <div class="suggestion px-3 py-1 rounded-xl bg-slate-100 text-sm">Suggested: <span class="suggestedWeight">—</span></div>
+
+        <button class="addSetBtn ml-auto px-3 py-1 rounded-xl bg-sky-500 text-white">Add Set</button>
+        <button class="deleteExercise px-3 py-1 rounded-xl bg-slate-200">Delete</button>
+      </div>
+      <div class="sets space-y-2"></div>
+      <div class="mt-2">
+        <label class="text-sm font-medium">Exercise notes</label>
+        <textarea class="exerciseNote mt-1 w-full px-3 py-2 border rounded-xl" rows="2" placeholder="Optional notes for this exercise (e.g. tempo, technique)"></textarea>
+      </div>
+    </div>
+  </template>
+
+  <!-- Set row template -->
+  <template id="setTemplate">
+    <div class="grid grid-cols-6 gap-2 items-center">
+      <input class="kg px-2 py-1 border rounded-xl" type="number" placeholder="kg"/>
+      <input class="reps px-2 py-1 border rounded-xl" type="number" placeholder="reps"/>
+      <input class="rir px-2 py-1 border rounded-xl" type="number" placeholder="RIR"/>
+      <input class="oneRM px-2 py-1 border rounded-xl" type="text" placeholder="1RM" readonly />
+      <input class="setNote px-2 py-1 border rounded-xl" type="text" placeholder="Set note" />
+      <button class="deleteSet px-2 py-1 rounded-xl bg-slate-100">Delete</button>
+    </div>
+  </template>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden"><div class="rounded-lg bg-green-600 text-white px-4 py-2 shadow">Notification</div></div>
+
+  <script>
+  const STORAGE_KEYS = { workouts: 'wt_workouts_v4', exercises: 'wt_exercises_v2' };
+
+  const DEFAULT_EXERCISES = [
+    { name: 'Bench Press', muscle: 'Chest', movement: 'Horizontal Push', best1RM: null, oneRMHistory: [] },
+    { name: 'Squat', muscle: 'Legs', movement: 'Squat', best1RM: null, oneRMHistory: [] },
+    { name: 'Deadlift', muscle: 'Full Body', movement: 'Hinge', best1RM: null, oneRMHistory: [] },
+    { name: 'Overhead Press', muscle: 'Shoulders', movement: 'Vertical Push', best1RM: null, oneRMHistory: [] },
+    { name: 'Pull-up', muscle: 'Back', movement: 'Vertical Pull', best1RM: null, oneRMHistory: [] },
+    { name: 'Barbell Row', muscle: 'Back', movement: 'Horizontal Pull', best1RM: null, oneRMHistory: [] }
+  ];
+
+  // 1RM update settings (conservative defaults)
+  const SETTINGS = {
+    strategy: 'upperBound', // upperBound | replace | smoothed
+    minIncreasePct: 0.005, // 0.5%
+    requireLowRIR: true,
+    maxRIR: 1,
+    alpha: 0.25,
+    weightStep: 2.5
+  };
+
+  let workouts = {}; // { date: [ {filterBy, category, exercise, exerciseNote, plannedMin, plannedMax, sets: [ {kg,reps,rir,oneRM,setNote} ]} ] }
+  let exercises = [];
+  let currentDate = null;
+
+  const $ = (sel, el=document) => el.querySelector(sel);
+  const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+  function todayYMD(){const d=new Date();const tz=new Date(d.getTime()-d.getTimezoneOffset()*60000);return tz.toISOString().slice(0,10);}
+
+  function loadFromStorage(){
+    try { workouts = JSON.parse(localStorage.getItem(STORAGE_KEYS.workouts)||'{}'); } catch { workouts = {}; }
+    try { exercises = JSON.parse(localStorage.getItem(STORAGE_KEYS.exercises)||'[]'); } catch { exercises = []; }
+    if(!exercises.length) exercises = [...DEFAULT_EXERCISES];
+    // normalize existing exercises to ensure fields
+    exercises = exercises.map(e => ({ best1RM: null, oneRMHistory: [], ...e }));
+  }
+  function saveWorkouts(){localStorage.setItem(STORAGE_KEYS.workouts,JSON.stringify(workouts));}
+  function saveExercises(){localStorage.setItem(STORAGE_KEYS.exercises,JSON.stringify(exercises));}
+
+  function emptyExercise(){return {filterBy:'muscle',category:'',exercise:'',exerciseNote:'',plannedMin:'',plannedMax:'',sets:[]};}
+  function emptySet(){return {kg:'',reps:'',rir:'',oneRM:'',setNote:''};}
+
+  function ensureDate(date){if(!workouts[date] || !Array.isArray(workouts[date])) workouts[date]=[emptyExercise(),emptyExercise(),emptyExercise()];}
+
+  function getUnique(list,key){return [...new Set(list.map(x=>x[key]).filter(Boolean))].sort();}
+  function filteredExercises(filterBy,cat){return exercises.filter(e=>filterBy==='movement'?e.movement===cat:e.muscle===cat);}
+
+  function roundToStep(value, step){ if(!isFinite(value)) return ''; return Math.round(value/step)*step; }
+
+  function calc1RM(kg,reps){
+    const k = parseFloat(kg);
+    const r = parseFloat(reps);
+    if(!k || !r || r <= 0) return '';
+    const epley = k * (1 + r/30);
+    return Math.round(epley*10)/10;
+  }
+
+  function suggestWeightFrom1RM(stored1RM, targetReps){
+    if(!stored1RM || !targetReps) return '';
+    const denom = 1 + (Number(targetReps) / 30);
+    const raw = Number(stored1RM) / denom;
+    return roundToStep(raw, SETTINGS.weightStep);
+  }
+
+  function findExerciseObjByName(name){ return exercises.find(e => e.name === name); }
+
+  function notify(msg, ok=true){
+    const t = $('#toast'); const box = t.firstElementChild;
+    box.textContent = msg; box.className = ok ? 'rounded-lg bg-green-600 text-white px-4 py-2 shadow' : 'rounded-lg bg-rose-600 text-white px-4 py-2 shadow';
+    t.style.display='block'; t.classList.remove('hidden');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(()=>{ t.style.display='none'; }, 2600);
+  }
+
+  function renderExercises(){
+    const container=$('#exerciseContainer');
+    container.innerHTML='';
+    (workouts[currentDate]||[]).forEach((exObj,idx)=>container.appendChild(buildExercise(exObj,idx)));
+  }
+
+  function buildExercise(exObj,idx){
+    const tpl=$('#exerciseTemplate').content.firstElementChild.cloneNode(true);
+    const filterSel=$('.filterBy',tpl);
+    const catSel=$('.category',tpl);
+    const exSel=$('.exercise',tpl);
+    const setsDiv=$('.sets',tpl);
+    const exNote=$('.exerciseNote',tpl);
+    const plannedMinInp=$('.plannedMin',tpl);
+    const plannedMaxInp=$('.plannedMax',tpl);
+    const suggestedSpan=$('.suggestedWeight',tpl);
+
+    filterSel.value=exObj.filterBy;
+
+    function refreshCats(){
+      catSel.innerHTML='<option value="">— Select —</option>';
+      getUnique(exercises,filterSel.value==='movement'?'movement':'muscle').forEach(c=>{
+        const o=document.createElement('option');o.value=c;o.textContent=c;catSel.appendChild(o);
+      });
+      catSel.value=exObj.category||'';
+    }
+    function refreshEx(){
+      exSel.innerHTML='<option value="">— Select Exercise —</option>';
+      filteredExercises(filterSel.value,catSel.value).forEach(e=>{
+        const o=document.createElement('option');o.value=e.name;o.textContent=e.name;exSel.appendChild(o);
+      });
+      exSel.value=exObj.exercise||'';
+      updateSuggestion();
+    }
+    refreshCats();refreshEx();
+
+    filterSel.addEventListener('change',()=>{exObj.filterBy=filterSel.value;exObj.category='';exObj.exercise='';refreshCats();refreshEx();saveWorkouts();});
+    catSel.addEventListener('change',()=>{exObj.category=catSel.value;exObj.exercise='';refreshEx();saveWorkouts();});
+    exSel.addEventListener('change',()=>{exObj.exercise=exSel.value; updateSuggestion(); saveWorkouts();});
+
+    // planned
+    plannedMinInp.value = exObj.plannedMin || '';
+    plannedMaxInp.value = exObj.plannedMax || '';
+    plannedMinInp.addEventListener('input', ()=>{ exObj.plannedMin = plannedMinInp.value; updateSuggestion(); saveWorkouts(); });
+    plannedMaxInp.addEventListener('input', ()=>{ exObj.plannedMax = plannedMaxInp.value; updateSuggestion(); saveWorkouts(); });
+
+    function updateSuggestion(){
+      const exName = exSel.value;
+      const stored = findExerciseObjByName(exName);
+      const stored1RM = stored && stored.best1RM ? stored.best1RM : null;
+      const target = exObj.plannedMin || exObj.plannedMax || '';
+      const suggested = stored1RM && target ? suggestWeightFrom1RM(stored1RM, target) : '';
+      suggestedSpan.textContent = suggested ? suggested + ' kg' : '—';
+    }
+
+    // Render sets
+    function renderSets(){
+      setsDiv.innerHTML='';
+      exObj.sets.forEach((set,setIdx)=>{
+        const s=$('#setTemplate').content.firstElementChild.cloneNode(true);
+        const inpKg=$('.kg',s);
+        const inpReps=$('.reps',s);
+        const inpRir=$('.rir',s);
+        const inp1=$('.oneRM',s);
+        const inpNote=$('.setNote',s);
+
+        inpKg.value=set.kg;
+        inpReps.value=set.reps;
+        inpRir.value=set.rir;
+        inp1.value=set.oneRM;
+        inpNote.value=set.setNote;
+
+        function update1RM(){
+          const val = calc1RM(inpKg.value, inpReps.value);
+          inp1.value = val === '' ? '' : val;
+          set.oneRM = inp1.value;
+        }
+
+        inpKg.addEventListener('input',()=>{ set.kg=inpKg.value; update1RM(); saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
+        inpReps.addEventListener('input',()=>{ set.reps=inpReps.value; update1RM(); saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
+        inpRir.addEventListener('input',()=>{ set.rir=inpRir.value; saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
+        inpNote.addEventListener('input',()=>{ set.setNote=inpNote.value; saveWorkouts(); });
+
+        $('.deleteSet',s).addEventListener('click',()=>{ exObj.sets.splice(setIdx,1); saveWorkouts(); renderSets(); });
+
+        // ensure 1RM shows on load
+        update1RM();
+
+        setsDiv.appendChild(s);
+      });
+    }
+    renderSets();
+
+    $('.addSetBtn',tpl).addEventListener('click',()=>{ exObj.sets.push(emptySet()); saveWorkouts(); renderSets(); });
+    $('.deleteExercise',tpl).addEventListener('click',()=>{ workouts[currentDate].splice(idx,1); saveWorkouts(); renderExercises(); });
+
+    // exercise note
+    exNote.value = exObj.exerciseNote || '';
+    exNote.addEventListener('input', ()=>{ exObj.exerciseNote = exNote.value; saveWorkouts(); });
+
+    return tpl;
+  }
+
+  function addExercise(){ workouts[currentDate].push(emptyExercise()); saveWorkouts(); renderExercises(); }
+
+  function loadDate(d){ currentDate=d; ensureDate(d); renderExercises(); }
+
+  function renderExerciseList(){
+    const tbody=$('#exerciseList'); tbody.innerHTML='';
+    exercises.forEach((ex,idx)=>{
+      const tr=document.createElement('tr');
+      const best = ex.best1RM ? (ex.best1RM + ' kg') : '-';
+      tr.innerHTML=`<td class="py-1 pr-2">${ex.name}</td><td class="py-1 pr-2">${ex.muscle}</td><td class="py-1 pr-2">${ex.movement}</td><td class="py-1 pr-2">${best}</td><td class="py-1 pr-0 text-right"><button data-idx='${idx}' class='removeEx px-2 py-1 border rounded'>Remove</button></td>`;
+      tbody.appendChild(tr);
+    });
+    $$('.removeEx',tbody).forEach(btn=>btn.addEventListener('click',e=>{
+      const idx=parseInt(e.target.dataset.idx);
+      if(confirm('Remove exercise: '+exercises[idx].name+'?')){
+        exercises.splice(idx,1); saveExercises(); renderExerciseList(); renderExercises();
+      }
+    }));
+  }
+
+  function addExerciseToList(){
+    const name=$('#exName').value.trim(),muscle=$('#exMuscle').value.trim(),movement=$('#exMovement').value.trim();
+    if(!name||!muscle||!movement) return alert('Fill all fields');
+    if(exercises.some(e=>e.name.toLowerCase()===name.toLowerCase())) return alert('Exists');
+    exercises.push({name,muscle,movement,best1RM:null,oneRMHistory:[]}); saveExercises(); $('#exName').value=''; $('#exMuscle').value=''; $('#exMovement').value=''; renderExerciseList(); renderExercises();
+  }
+
+  // Check and maybe update stored 1RM using upper-bound policy
+  function checkAndMaybeUpdate1RM(set, exObj){
+    try{
+      const kg = parseFloat(set.kg);
+      const reps = parseFloat(set.reps);
+      const rir = set.rir === '' ? null : parseFloat(set.rir);
+      if(!kg || !reps) return;
+      const est = calc1RM(kg,reps);
+      if(!est) return;
+
+      // find stored exercise in master list
+      const master = findExerciseObjByName(exObj.exercise);
+      if(!master) return; // nothing to update
+
+      // determine planned bounds
+      const plannedMax = exObj.plannedMax ? Number(exObj.plannedMax) : null;
+      const plannedMin = exObj.plannedMin ? Number(exObj.plannedMin) : null;
+
+      // require reaching planned upper bound (or min if max missing)
+      const requiredReps = plannedMax || plannedMin || null;
+      if(requiredReps === null) return; // no plan, don't auto-update
+      if(reps < requiredReps) return; // didn't reach the planned upper bound
+
+      // require RIR low if setting is on
+      if(SETTINGS.requireLowRIR && rir !== null && rir > SETTINGS.maxRIR) return;
+
+      const currentBest = master.best1RM ? Number(master.best1RM) : 0;
+      if(est <= currentBest * (1 + SETTINGS.minIncreasePct)) return; // not large enough
+
+      // Passed checks -> update according to strategy
+      const estRounded = Math.round(est*10)/10;
+      if(SETTINGS.strategy === 'smoothed' && currentBest > 0){
+        master.best1RM = Math.round(((SETTINGS.alpha * estRounded) + ((1-SETTINGS.alpha) * currentBest)) * 10) / 10;
+      } else {
+        master.best1RM = estRounded;
+      }
+      master.oneRMHistory = master.oneRMHistory || [];
+      master.oneRMHistory.push({ date: currentDate, est1RM: estRounded });
+      saveExercises();
+      notify(`Updated 1RM for ${master.name}: ${master.best1RM} kg (est ${estRounded} kg)`);
+      renderExerciseList();
+    }catch(e){console.error(e)}
+  }
+
+  function exportCSV(){
+    const rows=[];
+    for(const [date,exs] of Object.entries(workouts)){
+      exs.forEach(ex=>{
+        const exName = ex.exercise || '';
+        const exNote = ex.exerciseNote || '';
+        const master = findExerciseObjByName(exName);
+        const best1 = master && master.best1RM ? master.best1RM : '';
+        if(!ex.sets || !ex.sets.length) return;
+        ex.sets.forEach(set=>{
+          rows.push({date,exercise:exName,best1RM:best1,exerciseNote:exNote,kg:set.kg,reps:set.reps,rir:set.rir,oneRM:set.oneRM,setNote:set.setNote});
+        });
+      });
+    }
+    const headers=['date','exercise','best1RM','exerciseNote','kg','reps','rir','oneRM','setNote'];
+    const lines=[headers.join(',')].concat(rows.map(r=>headers.map(h=>('"'+String(r[h]||'').replaceAll('"','""')+'"')).join(','))).join('\n');
+    const blob=new Blob([lines],{type:'text/csv'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='workouts.csv'; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function clearWorkouts(){ if(confirm('Clear workouts?')){ workouts={}; saveWorkouts(); loadDate($('#dateInput').value); } }
+  function resetExercises(){ if(confirm('Reset exercises?')){ exercises=[...DEFAULT_EXERCISES]; saveExercises(); renderExerciseList(); renderExercises(); } }
+  function clearAll(){ if(confirm('Clear all data?')){ localStorage.removeItem(STORAGE_KEYS.workouts); localStorage.removeItem(STORAGE_KEYS.exercises); loadFromStorage(); loadDate($('#dateInput').value); renderExerciseList(); } }
+
+  function showScreen(id){ $$('.screen').forEach(s=>s.classList.add('hidden')); $(id).classList.remove('hidden'); }
+
+  // Copy previous workout: find the most recent date before currentDate that has at least one exercise with a name
+  function copyPrevious(){
+    const dates = Object.keys(workouts).filter(d=>d!==currentDate).sort().reverse();
+    let found = null;
+    for(const d of dates){
+      const exs = workouts[d]||[];
+      if(exs.some(e=>e.exercise)){ found = d; break; }
+    }
+    if(!found){ alert('No previous workout found to copy.'); return; }
+    if(!confirm('Copy workout from '+found+' to '+currentDate+'? This will overwrite current date.')) return;
+    // deep clone
+    workouts[currentDate] = JSON.parse(JSON.stringify(workouts[found]));
+    saveWorkouts();
+    renderExercises();
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    loadFromStorage();
+    $('#dateInput').value = todayYMD();
+    $('#dateInput').addEventListener('change', ()=> loadDate($('#dateInput').value));
+
+    $('#copyPrevBtn').addEventListener('click', copyPrevious);
+    $('#addExerciseBtn').addEventListener('click', addExercise);
+    $('#exportCsvBtn').addEventListener('click', exportCSV);
+    $('#addExerciseListBtn').addEventListener('click', addExerciseToList);
+    $('#clearWorkoutsBtn').addEventListener('click', clearWorkouts);
+    $('#resetExercisesBtn').addEventListener('click', resetExercises);
+    $('#clearAllBtn').addEventListener('click', clearAll);
+    $('#tab-log').addEventListener('click', ()=> showScreen('#screen-log'));
+    $('#tab-exercises').addEventListener('click', ()=> showScreen('#screen-exercises'));
+    $('#tab-settings').addEventListener('click', ()=> showScreen('#screen-settings'));
+
+    renderExerciseList();
+    loadDate($('#dateInput').value);
+    showScreen('#screen-log');
+  });
+  </script>
+</body>
+</html>
