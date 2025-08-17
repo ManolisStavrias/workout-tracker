@@ -9,8 +9,8 @@
   <style>
     input, select, button { font-size: 16px; }
     textarea { font-size: 15px; }
-    /* Simple toast */
-    #toast { position: fixed; right: 16px; bottom: 24px; z-index: 50; display: none; }
+    /* Toast styling at top-right */
+    #toast { position: fixed; right: 16px; top: 16px; z-index: 50; display: none; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -45,10 +45,11 @@
     <section id="screen-exercises" class="screen hidden">
       <div class="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 mb-4">
         <h2 class="text-lg font-semibold mb-3">Add Exercise</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-6 gap-2">
           <input id="exName" type="text" placeholder="Name (e.g., Bench Press)" class="col-span-2 px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
           <input id="exMuscle" list="muscleOptions" type="text" placeholder="Muscle Group" class="px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
           <input id="exMovement" list="movementOptions" type="text" placeholder="Movement" class="px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
+          <input id="exBest1RM" type="number" step="0.1" placeholder="Best 1RM (optional)" class="px-3 py-2 rounded-xl border border-slate-300 bg-white"/>
           <button id="addExerciseListBtn" class="px-3 py-2 rounded-xl bg-sky-500 text-white shadow hover:bg-sky-600">Add</button>
         </div>
         <datalist id="muscleOptions"></datalist>
@@ -132,7 +133,7 @@
     <div class="grid grid-cols-6 gap-2 items-center">
       <input class="kg px-2 py-1 border rounded-xl" type="number" placeholder="kg"/>
       <input class="reps px-2 py-1 border rounded-xl" type="number" placeholder="reps"/>
-      <input class="rir px-2 py-1 border rounded-xl" type="number" placeholder="RIR"/>
+      <input class="rir px-2 py-1 border rounded-xl" type="number" placeholder="rir"/>
       <input class="oneRM px-2 py-1 border rounded-xl" type="text" placeholder="1RM" readonly />
       <input class="setNote px-2 py-1 border rounded-xl" type="text" placeholder="Set note" />
       <button class="deleteSet px-2 py-1 rounded-xl bg-slate-100">Delete</button>
@@ -143,15 +144,15 @@
   <div id="toast" class="hidden"><div class="rounded-lg bg-green-600 text-white px-4 py-2 shadow">Notification</div></div>
 
   <script>
-  const STORAGE_KEYS = { workouts: 'wt_workouts_v4', exercises: 'wt_exercises_v2' };
+  const STORAGE_KEYS = { workouts: 'wt_workouts_v4', exercises: 'wt_exercises_v3' };
 
   const DEFAULT_EXERCISES = [
-    { name: 'Bench Press', muscle: 'Chest', movement: 'Horizontal Push', best1RM: null, oneRMHistory: [] },
-    { name: 'Squat', muscle: 'Legs', movement: 'Squat', best1RM: null, oneRMHistory: [] },
-    { name: 'Deadlift', muscle: 'Full Body', movement: 'Hinge', best1RM: null, oneRMHistory: [] },
-    { name: 'Overhead Press', muscle: 'Shoulders', movement: 'Vertical Push', best1RM: null, oneRMHistory: [] },
-    { name: 'Pull-up', muscle: 'Back', movement: 'Vertical Pull', best1RM: null, oneRMHistory: [] },
-    { name: 'Barbell Row', muscle: 'Back', movement: 'Horizontal Pull', best1RM: null, oneRMHistory: [] }
+    { id: 'ex_bench', name: 'Bench Press', muscle: 'Chest', movement: 'Horizontal Push', best1RM: null, manual1RM: false, oneRMHistory: [] },
+    { id: 'ex_squat', name: 'Squat', muscle: 'Legs', movement: 'Squat', best1RM: null, manual1RM: false, oneRMHistory: [] },
+    { id: 'ex_dead', name: 'Deadlift', muscle: 'Full Body', movement: 'Hinge', best1RM: null, manual1RM: false, oneRMHistory: [] },
+    { id: 'ex_ohp', name: 'Overhead Press', muscle: 'Shoulders', movement: 'Vertical Push', best1RM: null, manual1RM: false, oneRMHistory: [] },
+    { id: 'ex_pull', name: 'Pull-up', muscle: 'Back', movement: 'Vertical Pull', best1RM: null, manual1RM: false, oneRMHistory: [] },
+    { id: 'ex_row', name: 'Barbell Row', muscle: 'Back', movement: 'Horizontal Pull', best1RM: null, manual1RM: false, oneRMHistory: [] }
   ];
 
   // 1RM update settings (conservative defaults)
@@ -171,14 +172,15 @@
   const $ = (sel, el=document) => el.querySelector(sel);
   const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
 
+  function uid(prefix='id'){return prefix+Math.random().toString(36).slice(2,9);}  
   function todayYMD(){const d=new Date();const tz=new Date(d.getTime()-d.getTimezoneOffset()*60000);return tz.toISOString().slice(0,10);}
 
   function loadFromStorage(){
     try { workouts = JSON.parse(localStorage.getItem(STORAGE_KEYS.workouts)||'{}'); } catch { workouts = {}; }
     try { exercises = JSON.parse(localStorage.getItem(STORAGE_KEYS.exercises)||'[]'); } catch { exercises = []; }
     if(!exercises.length) exercises = [...DEFAULT_EXERCISES];
-    // normalize existing exercises to ensure fields
-    exercises = exercises.map(e => ({ best1RM: null, oneRMHistory: [], ...e }));
+    // ensure id and fields exist
+    exercises = exercises.map(e => ({ id: e.id || uid('ex_'), name: e.name, muscle: e.muscle, movement: e.movement, best1RM: e.best1RM ?? null, manual1RM: e.manual1RM || false, oneRMHistory: e.oneRMHistory || [] }));
   }
   function saveWorkouts(){localStorage.setItem(STORAGE_KEYS.workouts,JSON.stringify(workouts));}
   function saveExercises(){localStorage.setItem(STORAGE_KEYS.exercises,JSON.stringify(exercises));}
@@ -193,11 +195,14 @@
 
   function roundToStep(value, step){ if(!isFinite(value)) return ''; return Math.round(value/step)*step; }
 
-  function calc1RM(kg,reps){
+  // Use reps + rir as effective reps when estimating 1RM
+  function calc1RM(kg,reps,rir=0){
     const k = parseFloat(kg);
     const r = parseFloat(reps);
-    if(!k || !r || r <= 0) return '';
-    const epley = k * (1 + r/30);
+    const extra = parseFloat(rir) || 0;
+    const effective = r + extra;
+    if(!k || !effective || effective <= 0) return '';
+    const epley = k * (1 + effective/30);
     return Math.round(epley*10)/10;
   }
 
@@ -205,17 +210,19 @@
     if(!stored1RM || !targetReps) return '';
     const denom = 1 + (Number(targetReps) / 30);
     const raw = Number(stored1RM) / denom;
-    return roundToStep(raw, SETTINGS.weightStep);
+    const rounded = roundToStep(raw, SETTINGS.weightStep);
+    return rounded || Math.round(raw*10)/10;
   }
 
   function findExerciseObjByName(name){ return exercises.find(e => e.name === name); }
+  function findExerciseObjById(id){ return exercises.find(e => e.id === id); }
 
   function notify(msg, ok=true){
     const t = $('#toast'); const box = t.firstElementChild;
     box.textContent = msg; box.className = ok ? 'rounded-lg bg-green-600 text-white px-4 py-2 shadow' : 'rounded-lg bg-rose-600 text-white px-4 py-2 shadow';
     t.style.display='block'; t.classList.remove('hidden');
     clearTimeout(t._timer);
-    t._timer = setTimeout(()=>{ t.style.display='none'; }, 2600);
+    t._timer = setTimeout(()=>{ t.style.display='none'; }, 3200);
   }
 
   function renderExercises(){
@@ -291,17 +298,19 @@
         inpNote.value=set.setNote;
 
         function update1RM(){
-          const val = calc1RM(inpKg.value, inpReps.value);
+          const val = calc1RM(inpKg.value, inpReps.value, inpRir.value);
           inp1.value = val === '' ? '' : val;
           set.oneRM = inp1.value;
         }
 
         inpKg.addEventListener('input',()=>{ set.kg=inpKg.value; update1RM(); saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
         inpReps.addEventListener('input',()=>{ set.reps=inpReps.value; update1RM(); saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
-        inpRir.addEventListener('input',()=>{ set.rir=inpRir.value; saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
+        inpRir.addEventListener('input',()=>{ set.rir=inpRir.value; update1RM(); saveWorkouts(); checkAndMaybeUpdate1RM(set, exObj); });
         inpNote.addEventListener('input',()=>{ set.setNote=inpNote.value; saveWorkouts(); });
 
-        $('.deleteSet',s).addEventListener('click',()=>{ exObj.sets.splice(setIdx,1); saveWorkouts(); renderSets(); });
+        $('.deleteSet',s).addEventListener('click',()=>{ exObj.sets.splice(setIdx,1); saveWorkouts(); renderSets(); // recompute best for this exercise
+          if(exObj.exercise) recomputeBestFromSets(exObj.exercise);
+        });
 
         // ensure 1RM shows on load
         update1RM();
@@ -311,7 +320,12 @@
     }
     renderSets();
 
-    $('.addSetBtn',tpl).addEventListener('click',()=>{ exObj.sets.push(emptySet()); saveWorkouts(); renderSets(); });
+    $('.addSetBtn',tpl).addEventListener('click',()=>{ 
+      const last = exObj.sets[exObj.sets.length-1];
+      const newSet = emptySet();
+      if(last && last.kg) newSet.kg = last.kg; // prefill kg from previous set
+      exObj.sets.push(newSet); saveWorkouts(); renderSets();
+    });
     $('.deleteExercise',tpl).addEventListener('click',()=>{ workouts[currentDate].splice(idx,1); saveWorkouts(); renderExercises(); });
 
     // exercise note
@@ -325,42 +339,88 @@
 
   function loadDate(d){ currentDate=d; ensureDate(d); renderExercises(); }
 
+  // Render exercise manager list with Edit button
   function renderExerciseList(){
     const tbody=$('#exerciseList'); tbody.innerHTML='';
     exercises.forEach((ex,idx)=>{
       const tr=document.createElement('tr');
       const best = ex.best1RM ? (ex.best1RM + ' kg') : '-';
-      tr.innerHTML=`<td class="py-1 pr-2">${ex.name}</td><td class="py-1 pr-2">${ex.muscle}</td><td class="py-1 pr-2">${ex.movement}</td><td class="py-1 pr-2">${best}</td><td class="py-1 pr-0 text-right"><button data-idx='${idx}' class='removeEx px-2 py-1 border rounded'>Remove</button></td>`;
+      tr.innerHTML=`<td class="py-1 pr-2">${ex.name}</td><td class="py-1 pr-2">${ex.muscle}</td><td class="py-1 pr-2">${ex.movement}</td><td class="py-1 pr-2">${best}</td><td class="py-1 pr-0 text-right"><button data-idx='${idx}' class='editEx px-2 py-1 border rounded'>Edit</button></td>`;
       tbody.appendChild(tr);
     });
-    $$('.removeEx',tbody).forEach(btn=>btn.addEventListener('click',e=>{
+    $$('.editEx',tbody).forEach(btn=>btn.addEventListener('click',e=>{
       const idx=parseInt(e.target.dataset.idx);
-      if(confirm('Remove exercise: '+exercises[idx].name+'?')){
-        exercises.splice(idx,1); saveExercises(); renderExerciseList(); renderExercises();
-      }
+      openEditExercise(idx);
     }));
+  }
+
+  // Open inline editor modal (simple) for exercise
+  function openEditExercise(idx){
+    const ex = exercises[idx];
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black/40 flex items-center justify-center z-50';
+    modal.innerHTML = `
+      <div class="bg-white p-4 rounded-lg max-w-md w-full">
+        <h3 class="font-semibold mb-2">Edit Exercise</h3>
+        <div class="grid gap-2">
+          <input id="editName" class="px-3 py-2 border rounded" value="${ex.name}" />
+          <input id="editMuscle" class="px-3 py-2 border rounded" value="${ex.muscle}" />
+          <input id="editMovement" class="px-3 py-2 border rounded" value="${ex.movement}" />
+          <input id="editBest1" type="number" step="0.1" class="px-3 py-2 border rounded" value="${ex.best1RM ?? ''}" placeholder="Best 1RM (optional)" />
+          <div class="flex gap-2 justify-end">
+            <button id="saveEx" class="px-3 py-2 bg-emerald-500 text-white rounded">Save</button>
+            <button id="deleteEx" class="px-3 py-2 bg-rose-500 text-white rounded">Delete</button>
+            <button id="cancelEx" class="px-3 py-2 bg-slate-300 rounded">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    $('#cancelEx', modal).addEventListener('click', ()=>{ modal.remove(); });
+    $('#deleteEx', modal).addEventListener('click', ()=>{
+      if(!confirm('Delete exercise from list? This will not remove historical workout entries.')) return;
+      exercises.splice(idx,1); saveExercises(); renderExerciseList(); renderExercises(); modal.remove();
+    });
+    $('#saveEx', modal).addEventListener('click', ()=>{
+      const newName = $('#editName', modal).value.trim();
+      const newMuscle = $('#editMuscle', modal).value.trim();
+      const newMove = $('#editMovement', modal).value.trim();
+      const newBest = $('#editBest1', modal).value.trim();
+      if(!newName || !newMuscle || !newMove) return alert('Fill name/muscle/movement');
+      const oldName = ex.name;
+      ex.name = newName; ex.muscle = newMuscle; ex.movement = newMove;
+      if(newBest !== ''){ ex.best1RM = Number(newBest); ex.manual1RM = true; } else { ex.best1RM = null; ex.manual1RM = false; }
+      // update workouts referencing old exercise name -> replace with new name
+      for(const date of Object.keys(workouts)){
+        (workouts[date]||[]).forEach(entry => { if(entry.exercise === oldName) entry.exercise = newName; });
+      }
+      saveExercises(); saveWorkouts(); renderExerciseList(); renderExercises(); modal.remove();
+    });
   }
 
   function addExerciseToList(){
     const name=$('#exName').value.trim(),muscle=$('#exMuscle').value.trim(),movement=$('#exMovement').value.trim();
+    const bestVal = $('#exBest1RM').value.trim();
     if(!name||!muscle||!movement) return alert('Fill all fields');
     if(exercises.some(e=>e.name.toLowerCase()===name.toLowerCase())) return alert('Exists');
-    exercises.push({name,muscle,movement,best1RM:null,oneRMHistory:[]}); saveExercises(); $('#exName').value=''; $('#exMuscle').value=''; $('#exMovement').value=''; renderExerciseList(); renderExercises();
+    exercises.push({ id: uid('ex_'), name,muscle,movement,best1RM: bestVal?Number(bestVal):null, manual1RM: !!bestVal, oneRMHistory: [] }); saveExercises(); $('#exName').value=''; $('#exMuscle').value=''; $('#exMovement').value=''; $('#exBest1RM').value=''; renderExerciseList(); renderExercises();
   }
 
-  // Check and maybe update stored 1RM using upper-bound policy
+  // Check and maybe update stored 1RM using upper-bound policy; updates UI immediately
   function checkAndMaybeUpdate1RM(set, exObj){
     try{
       const kg = parseFloat(set.kg);
       const reps = parseFloat(set.reps);
-      const rir = set.rir === '' ? null : parseFloat(set.rir);
+      const rir = set.rir === '' ? 0 : parseFloat(set.rir);
       if(!kg || !reps) return;
-      const est = calc1RM(kg,reps);
+      const est = calc1RM(kg,reps,rir);
       if(!est) return;
 
       // find stored exercise in master list
       const master = findExerciseObjByName(exObj.exercise);
       if(!master) return; // nothing to update
+
+      // if user manually set best1RM, don't auto-update
+      if(master.manual1RM) return;
 
       // determine planned bounds
       const plannedMax = exObj.plannedMax ? Number(exObj.plannedMax) : null;
@@ -384,12 +444,45 @@
       } else {
         master.best1RM = estRounded;
       }
+      master.manual1RM = false; // auto-updated
       master.oneRMHistory = master.oneRMHistory || [];
       master.oneRMHistory.push({ date: currentDate, est1RM: estRounded });
       saveExercises();
-      notify(`Updated 1RM for ${master.name}: ${master.best1RM} kg (est ${estRounded} kg)`);
+      // Update UI immediately: suggestions and manager
+      renderExercises();
       renderExerciseList();
+      notify(`Updated 1RM for ${master.name}: ${master.best1RM} kg (est ${estRounded} kg)`);
     }catch(e){console.error(e)}
+  }
+
+  // Recompute best 1RM from existing logged sets (used when deleting sets)
+  function recomputeBestFromSets(exName){
+    const master = findExerciseObjByName(exName);
+    if(!master) return;
+    if(master.manual1RM) return; // don't override manual entries
+
+    const ests = [];
+    for(const [date, list] of Object.entries(workouts)){
+      (list||[]).forEach(entry=>{
+        if(entry.exercise !== exName) return;
+        (entry.sets||[]).forEach(s => {
+          const kg = parseFloat(s.kg); const reps = parseFloat(s.reps); const rir = s.rir === '' ? 0 : parseFloat(s.rir);
+          if(!kg || !reps) return;
+          const est = calc1RM(kg, reps, rir);
+          if(est) ests.push({date,est});
+        });
+      });
+    }
+    const prevBest = master.best1RM ? Number(master.best1RM) : 0;
+    const maxEst = ests.length ? Math.max(...ests.map(x=>x.est)) : null;
+    if(maxEst === null){ master.best1RM = null; master.oneRMHistory = []; saveExercises(); renderExerciseList(); renderExercises(); return; }
+    // If maxEst is different from current, update and also rebuild history to include dates that produced ests
+    master.best1RM = Math.round(maxEst*10)/10;
+    // rebuild history from ests (simple)
+    master.oneRMHistory = ests.map(x=>({date:x.date, est1RM: Math.round(x.est*10)/10}));
+    saveExercises();
+    renderExerciseList();
+    renderExercises();
   }
 
   function exportCSV(){
@@ -407,7 +500,8 @@
       });
     }
     const headers=['date','exercise','best1RM','exerciseNote','kg','reps','rir','oneRM','setNote'];
-    const lines=[headers.join(',')].concat(rows.map(r=>headers.map(h=>('"'+String(r[h]||'').replaceAll('"','""')+'"')).join(','))).join('\n');
+    const lines=[headers.join(',')].concat(rows.map(r=>headers.map(h=>('"'+String(r[h]||'').replaceAll('"','""')+'"')).join(','))).join('
+');
     const blob=new Blob([lines],{type:'text/csv'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='workouts.csv'; a.click(); URL.revokeObjectURL(a.href);
   }
